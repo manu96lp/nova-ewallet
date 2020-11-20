@@ -22,7 +22,7 @@ module.exports = {
 		 * @returns {String} Saved file name
 		 */
 		save: {
-			auth: { required: true },
+			auth: { required: true, status: [ "confirmed", "authorized" ] },
 			
 			handler( ctx )
 			{

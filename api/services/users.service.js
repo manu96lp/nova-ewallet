@@ -27,13 +27,13 @@ module.exports = {
 	settings: {
 		JWT_SECRET: process.env.JWT_SECRET,
 		
-		fields: [ "_id", "email", "name", "surname", "birthday", "avatar", "pin", "status" ],
+		fields: [ "_id", "email", "name", "surname", "birthday", "phone", "avatar", "pin", "address", "status" ],
 		
 		entityValidator: {
-			email: { type: "email", max: 48 },
-			password: { type: "string", min: 8, max: 20 },
-			identityNumber: { type: "string", alphanum: true, min: 7, max: 20 },
-			identityType: { type: "enum", values: [ "nid", "passport" ] },
+			email: { type: "email", max: 48, optional: true },
+			password: { type: "string", min: 8, max: 20, optional: true },
+			identityNumber: { type: "string", alphanum: true, min: 7, max: 20, optional: true },
+			identityType: { type: "enum", values: [ "nid", "passport" ], optional: true },
 			name: { type: "string", min: 2, max: 20, optional: true },
 			surname: { type: "string", min: 2, max: 20, optional: true },
 			birthday: { type: "date", convert: true, optional: true },
@@ -45,7 +45,7 @@ module.exports = {
 				department: { type: "string" },
 				locality: { type: "string" },
 				street: { type: "string" },
-				height: { type: "number", convert: true }
+				number: { type: "number", positive: true, convert: true }
 			} },
 			
 			status: { type: "enum", values: [ "pending", "confirmed", "protected", "authorized" ], default: "pending" },
@@ -189,6 +189,9 @@ module.exports = {
 			async handler( ctx )
 			{
 				const { identityNumber, identityType, name, surname, birthday, phone, address } = ctx.params;
+				const entity = { identityNumber, identityType, name, surname, birthday, phone, address };
+				
+				await this.validateEntity( entity );
 				
 				if ( calculateAge( birthday ) < 16 ) {
 					throw new MoleculerClientError( "User must be over sixteen years old", 422, "", [ { field: "birthday", message: "younger than 16" } ] );
@@ -225,8 +228,9 @@ module.exports = {
 					}
 				};
 				
+				await ctx.call( "accounts.create", { user: ctx.meta.user._id.toString( ) } );
+				
 				const result = await this.adapter.updateById( ctx.meta.user._id.toString( ), update );
-				const account = await ctx.call( "accounts.create", { user: ctx.meta.user._id.toString( ) } );
 
 				const json = await this.transformDocuments( ctx, { }, result );
 				const tent = this.transformEntity( json, true, ctx.meta.token );
@@ -348,14 +352,10 @@ module.exports = {
 			async handler( ctx )
 			{
 				const { token, password } = ctx.params;
-				const found = await ctx.call( "tokens.find", { token } );
+				const found = await ctx.call( "tokens.find", { token, type: "recovery" } );
 				
 				if ( !found ) {
 					throw new MoleculerClientError( "Token not found", 404 );
-				}
-				
-				if ( found.type !== "recovery" ) {
-					throw new MoleculerClientError( "Invalid token", 409 );
 				}
 				
 				await ctx.call( "tokens.update", { id: found._id } );
@@ -419,24 +419,22 @@ module.exports = {
 			rest: "PUT /update",
 			visibility: "published",
 			params: {
-				phone: { type: "string", min: 8, max: 20, optional: true },
+				phone: { type: "string", optional: true },
 				avatar: { type: "url", optional: true },
-				address: { type: "object", optional: true, props: {
-					province: { type: "string" },
-					department: { type: "string" },
-					locality: { type: "string" },
-					street: { type: "string" },
-					height: { type: "number", convert: true }
-				} }
+				address: { type: "object", optional: true }
 			},
 			
 			async handler( ctx )
 			{
-				const { address, phone } = ctx.params;
+				const { address, phone, avatar } = ctx.params;
 				
-				if ( !address && !phone ) {
-					return;
+				if ( !address && !phone && !avatar ) {
+					throw new MoleculerClientError( "Empty parameters", 400 );
 				}
+				
+				const entity = { address, phone, avatar };
+				
+				await this.validateEntity( entity );
 				
 				if ( address ) {
 					const res = await verifyAddress( address );
@@ -452,11 +450,13 @@ module.exports = {
 				
 				const data = {
 					"$set": {
-						address,
-						phone,
 						updatedAt: new Date( )
 					}
 				};
+				
+				phone && ( data.$set.phone = phone );
+				avatar && ( data.$set.avatar = avatar );
+				address && ( data.$set.address = address );
 				
 				const result = await this.adapter.updateById( ctx.meta.user._id.toString( ), data );
 

@@ -131,18 +131,7 @@ module.exports = {
 					if ( user ) {
 						ctx.meta.token = token;
 						ctx.meta.userID = user._id;
-						ctx.meta.user = _.pick( user, [
-							"_id",
-							"email",
-							"name",
-							"surname",
-							"birthday",
-							"avatar",
-							"status",
-							"role",
-							"createdAt",
-							"updatedAt"
-						] );
+						ctx.meta.user = _.pick( user, [ "_id", "email", "name", "surname", "avatar", "status", "role" ] );
 					}
 				}
 				catch ( err ) { }

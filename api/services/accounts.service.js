@@ -56,7 +56,7 @@ module.exports = {
 			
 			async handler( ctx )
 			{
-				const item = await this.findByOwner( user );
+				const item = await this.findByOwner( ctx.params.user );
 				
 				if ( item ) {
 					throw new MoleculerClientError( "User already has an account", 422, "", [ { field: "user", message: "already exists" } ] );
@@ -66,8 +66,6 @@ module.exports = {
 					user: ctx.params.user,
 					currency: ctx.params.currency
 				};
-				
-				await this.validateEntity( entity );
 				
 				do
 				{
@@ -80,6 +78,8 @@ module.exports = {
 					entity.rechargeCode = generateRandomKey( 10, "numeric" );
 				}
 				while ( await this.findByRechargeCode( entity.rechargeCode ) )
+				
+				await this.validateEntity( entity );
 				
 				const result = await this.adapter.insert( entity );
 				const json = await this.transformDocuments( ctx, { }, result );
@@ -429,7 +429,10 @@ module.exports = {
 				const cvu = ctx.params.cvu || generateRandomKey( 22, "numeric" );
 				
 				const updateData = {
-					"$set": { cvu }
+					"$set": {
+						cvu,
+						updatedAt: new Date( )
+					}
 				};
 				
 				await this.adapter.updateById( account._id.toString( ), updateData );
