@@ -2,6 +2,7 @@
 
 const DbService = require( "../mixins/db.mixin" );
 const CacheCleanerMixin = require( "../mixins/cache.cleaner.mixin" );
+const { generateRandomKey } = require( "../helpers/common" );
 
 const { MoleculerClientError } = require( "moleculer" ).Errors;
 
@@ -66,13 +67,13 @@ module.exports = {
 				const { account, involved, amount, type, currency, data, createdAt } = ctx.params;
 				const entity = { account, involved, amount, type, currency, data, createdAt };
 				
-				await this.validateEntity( entity );
-				
 				do
 				{
 					entity.code = generateRandomKey( 16, "alphanumeric" );
 				}
 				while ( await this.findByCode( entity.code ) )
+				
+				await this.validateEntity( entity );
 				
 				const result = await this.adapter.insert( entity );
 				const json = await this.transformDocuments( ctx, { }, result );
