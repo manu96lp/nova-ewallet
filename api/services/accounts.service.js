@@ -184,24 +184,26 @@ module.exports = {
 			{
 				const { email, amount } = ctx.params;
 				
-				const senderAccount = await this.adapter.findByOwner( ctx.meta.user._id.toString( ) );
+				const senderAccount = await this.findByOwner( ctx.meta.user._id.toString( ) );
 				
 				if ( !senderAccount ) {
 					throw new MoleculerClientError( "Sender account not found", 404 );
 				}
 				
-				if ( amount > senderAccount.amount ) {
+				if ( amount > senderAccount.balance ) {
 					throw new MoleculerClientError( "Insufficient funds", 422, "", [ { field: "amount", message: "lesser than transfer amount" } ] );
 				}
 				
-				const receiver = await ctx.call( "users.find", { fields: [ "_id", "status" ], query: { email } } );
+				const receivers = await ctx.call( "users.find", { fields: [ "_id", "status" ], query: { email } } );
 				
-				if ( !receiver ) {
+				if ( !receivers || receivers.length === 0) {
 					throw new MoleculerClientError( "Email not found", 422, "", [ { field: "email", message: "not found" } ] );
 				}
 				
+				const receiver = receivers[0];
 				const validStatuses = [ "protected", "authorized" ];
 				
+				console.log('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', receiver)
 				if ( !validStatuses.includes( receiver.status ) ) {
 					throw new MoleculerClientError( "Receiver cannot accept transferences", 409 );
 				}
@@ -225,7 +227,7 @@ module.exports = {
 					currency: senderAccount.currency
 				};
 				
-				entity.account 		= senderAccount;
+				entity.account 		= senderAccount._id.toString();
 				entity.involved 	= receiverAccount.code;
 				entity.amount 		= ( amount * -1.0 );
 				entity.data 		= { name: receiverAccount.name, email: receiverAccount.email };
@@ -234,7 +236,7 @@ module.exports = {
 				
 				await this.adapter.updateById( senderAccount._id,  { "$set": { balance: ( senderAccount.balance - amount ) } } );
 				
-				entity.account 		= receiverAccount;
+				entity.account 		= receiverAccount._id.toString();
 				entity.involved 	= senderAccount.code;
 				entity.amount 		= amount;
 				entity.data 		= { name: senderAccount.name, email: senderAccount.email };
