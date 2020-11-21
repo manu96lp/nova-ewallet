@@ -1,6 +1,6 @@
 "use strict";
 
-const { generateRandomKey } = require( "../helpers/common" );
+const { generateRandomKey, verifyAddress } = require( "../helpers/common" );
 
 const DbService = require( "../mixins/db.mixin" );
 const CacheCleanerMixin = require( "../mixins/cache.cleaner.mixin" );
@@ -20,7 +20,7 @@ module.exports = {
 	],
 	
 	settings: {
-		fields: [ "rechargeCode", "balance", "cvu", "currency" ],
+		fields: [ "rechargeCode", "balance", "cvu", "currency", "updatedAt" ],
 		
 		entityValidator: {
 			user: { type: "string" },
@@ -37,6 +37,18 @@ module.exports = {
 	},
 	
 	actions: {
+		/**
+		 * Change moleculer-db actions visibility to "public" in order to protect them from unauthorized access
+		 */
+		get: { visibility: "public" },
+		find: { visibility: "public" },
+		count: { visibility: "public" },
+		list: { visibility: "public" },
+		create: { visibility: "public" },
+		insert: { visibility: "public" },
+		update: { visibility: "public" },
+		remove: { visibility: "public" },
+		
 		/**
 		 * Create a new account
 		 *
@@ -112,7 +124,7 @@ module.exports = {
 				code: { type: "string" },
 				store: { type: "string" },
 				amount: { type: "number", convert: true },
-				date: { type: "date" },
+				date: { type: "date", convert: true },
 				
 				address: { type: "object", props: {
 					province: { type: "string" },
@@ -127,7 +139,7 @@ module.exports = {
 			{
 				const { code, store, amount, date, address } = ctx.params;
 				
-				const account = await this.adapter.findOne( { rechargeCode: code } );
+				const account = await this.findByRechargeCode( code );
 				
 				if ( !account ) {
 					throw new MoleculerClientError( "Recharge code not found", 422, "", [ { field: "code", message: "not found" } ] );
@@ -142,19 +154,22 @@ module.exports = {
 				}
 				
 				const entity = { };
+				const update = {
+					balance: ( account.balance + amount ),
+					updatedAt: new Date( )
+				};
 				
-				entity.account 		= account;
+				entity.account 		= account._id.toString( );
 				entity.involved 	= store;
 				entity.amount 		= amount;
 				entity.type 		= "recharge";
 				entity.currency 	= account.currency;
-				entity.data 		= address;
+				entity.data 		= { address };
 				entity.createdAt 	= date;
 				
 				const transaction = await ctx.call( "transactions.create", entity );
-				const updateData = { "$set": { balance: ( account.balance + amount ) } };
 				
-				await this.adapter.updateById( account._id, updateData );
+				await this.adapter.updateById( account._id, { "$set": update } );
 				
 				return transaction;
 			}
@@ -191,24 +206,22 @@ module.exports = {
 				}
 				
 				if ( amount > senderAccount.balance ) {
-					throw new MoleculerClientError( "Insufficient funds", 422, "", [ { field: "amount", message: "lesser than transfer amount" } ] );
+					throw new MoleculerClientError( "Insufficient funds", 409 );
 				}
 				
-				const receivers = await ctx.call( "users.find", { fields: [ "_id", "status" ], query: { email } } );
+				const receiver = await ctx.call( "users.findByEmail", { email, fields: [ "_id", "status", "name", "surname" ] } );
 				
-				if ( !receivers || receivers.length === 0) {
+				if ( !receiver ) {
 					throw new MoleculerClientError( "Email not found", 422, "", [ { field: "email", message: "not found" } ] );
 				}
 				
-				const receiver = receivers[0];
 				const validStatuses = [ "protected", "authorized" ];
 				
-				console.log('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', receiver)
 				if ( !validStatuses.includes( receiver.status ) ) {
 					throw new MoleculerClientError( "Receiver cannot accept transferences", 409 );
 				}
 				
-				const receiverAccount = await this.adapter.findOne( { user: receiver._id.toString( ) } );
+				const receiverAccount = await this.findByOwner( receiver._id.toString( ) );
 				
 				if ( !receiverAccount ) {
 					throw new MoleculerClientError( "Receiver account not found", 404 );
@@ -227,22 +240,29 @@ module.exports = {
 					currency: senderAccount.currency
 				};
 				
-				entity.account 		= senderAccount._id.toString();
+				const update = {
+					balance: ( senderAccount.balance - amount ),
+					updatedAt: new Date( )
+				};
+				
+				entity.account 		= senderAccount._id.toString( );
 				entity.involved 	= receiverAccount.code;
 				entity.amount 		= ( amount * -1.0 );
-				entity.data 		= { name: receiverAccount.name, email: receiverAccount.email };
+				entity.data 		= { name: receiver.name, surname: receiver.surname, email };
 				
 				const transaction = await ctx.call( "transactions.create", entity );
 				
-				await this.adapter.updateById( senderAccount._id,  { "$set": { balance: ( senderAccount.balance - amount ) } } );
+				await this.adapter.updateById( senderAccount._id, { "$set": update } );
 				
-				entity.account 		= receiverAccount._id.toString();
+				entity.account 		= receiverAccount._id.toString( );
 				entity.involved 	= senderAccount.code;
 				entity.amount 		= amount;
-				entity.data 		= { name: senderAccount.name, email: senderAccount.email };
+				entity.data 		= { name: ctx.meta.user.name, email: ctx.meta.user.email };
+				
+				update.balance 		= ( receiverAccount.balance + amount );
 				
 				await ctx.call( "transactions.create", entity );
-				await this.adapter.updateById( receiverAccount._id, { "$set": { balance: ( receiverAccount.balance + amount ) } } );
+				await this.adapter.updateById( receiverAccount._id, { "$set": update } );
 				
 				delete transaction.involved;
 				
@@ -269,8 +289,8 @@ module.exports = {
 				keys: [ "#userID", "limit", "offset" ]
 			},
 			params: {
-				limit: { type: "number", min: 5, max: 50, default: 15, optional: true, convert: true },
-				offset: { type: "number", min: 0, default: 0, optional: true, convert: true },
+				limit: { type: "number", min: 5, max: 50, optional: true, convert: true },
+				offset: { type: "number", min: 0, optional: true, convert: true },
 			},
 			
 			async handler( ctx )
@@ -280,6 +300,9 @@ module.exports = {
 				if ( !account ) {
 					throw new MoleculerClientError( "Account not found", 422, "", [ { field: "user", message: "not found" } ] );
 				}
+				
+				const limit = ctx.params.limit || 15;
+				const offset = ctx.params.offset || 0;
 				
 				const list = await ctx.call( "transactions.list", { account: account._id.toString( ), limit, offset } );
 				
@@ -309,7 +332,7 @@ module.exports = {
 			params: {
 				type: { type: "enum", values: [ "incoming", "outgoing", "any" ] },
 				frequence: { type: "enum", values: [ "day", "week", "month" ] },
-				limit: { type: "number", min: 1, max: 60, optional: true }
+				limit: { type: "number", min: 1, max: 60, optional: true, convert: true }
 			},
 			
 			async handler( ctx )
@@ -327,12 +350,14 @@ module.exports = {
 				const frequence = ctx.params.frequence;
 				const limit = ctx.params.limit ? Math.min( ctx.params.limit, ( defaultLimits[ frequence ] * 2 ) ) : defaultLimits[ frequence ];
 				
-				const startDate = new Date( );
-				const endDate = new Date( );
+				const timestamp = Date.now( );
 				
-				startDate.setDate( startDate.getDate( ) - ( frequenceDays[ frequence ] * limit ) );
+				const startDate = new Date( timestamp - ( ( frequenceDays[ frequence ] * limit ) * 86400000 ) );
+				const endDate = new Date( timestamp + ( 900000 - ( timestamp % 900000 ) ) );
 				
-				const list = await ctx.call( "transactions.period", { account: account._id.toString( ), startDate, endDate } );
+				startDate.setHours( 0, 0, 0, 0 );
+				
+				const list = await ctx.call( "transactions.period", { account: account._id.toString( ), startDate: startDate.toString( ), endDate: endDate.toString( ) } );
 				const stats = [ ];
 				
 				for ( let i = 0 ; i < limit ; i++ )
@@ -378,7 +403,7 @@ module.exports = {
 		 *
 		 * @returns {Object} Account
 		 */
-		get: {
+		current: {
 			auth: { required: true, status: [ "authorized" ] },
 			rest: "GET /current",
 			visibility: "published",
@@ -394,7 +419,7 @@ module.exports = {
 					throw new MoleculerClientError( "Account not found", 422, "", [ { field: "user", message: "not found" } ] );
 				}
 				
-				const json = await this.transformDocuments( account );
+				const json = await this.transformDocuments( ctx, { }, account );
 				
 				return json;
 			}
@@ -430,14 +455,12 @@ module.exports = {
 				
 				const cvu = ctx.params.cvu || generateRandomKey( 22, "numeric" );
 				
-				const updateData = {
-					"$set": {
-						cvu,
-						updatedAt: new Date( )
-					}
+				const update = {
+					cvu,
+					updatedAt: new Date( )
 				};
 				
-				await this.adapter.updateById( account._id.toString( ), updateData );
+				await this.adapter.updateById( account._id.toString( ), { "$set": update } );
 			}
 		},
 		

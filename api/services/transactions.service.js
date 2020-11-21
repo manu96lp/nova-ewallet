@@ -1,8 +1,9 @@
 "use strict";
 
+const { generateRandomKey } = require( "../helpers/common" );
+
 const DbService = require( "../mixins/db.mixin" );
 const CacheCleanerMixin = require( "../mixins/cache.cleaner.mixin" );
-const { generateRandomKey } = require( "../helpers/common" );
 
 const { MoleculerClientError } = require( "moleculer" ).Errors;
 
@@ -129,9 +130,10 @@ module.exports = {
 				] );
 				
 				const jsons = await this.transformDocuments( ctx, params, res[ 0 ] );
+				const tents = await this.transformResults( jsons );
 				
 				return {
-					rows: jsons,
+					rows: tents,
 					count: res[ 1 ]
 				};
 			}
@@ -155,8 +157,8 @@ module.exports = {
 			},
 			params: {
 				account: { type: "string" },
-				startDate: { type: "date" },
-				endDate: { type: "date" }
+				startDate: { type: "date", convert: true },
+				endDate: { type: "date", convert: true }
 			},
 			
 			async handler( ctx )
@@ -184,9 +186,10 @@ module.exports = {
 				] );
 				
 				const jsons = await this.transformDocuments( ctx, params, res[ 0 ] );
+				const tents = await this.transformResults( jsons );
 				
 				return {
-					rows: jsons,
+					rows: tents,
 					count: res[ 1 ]
 				};
 			}
@@ -236,6 +239,48 @@ module.exports = {
 			if ( ( endDateTime - startDateTime ) > 60 ) {
 				throw new MoleculerClientError( "Period can\'t be more than 60 days" );
 			}
+		},
+		
+		/**
+		 * Transform results
+		 * 
+		 * @methods
+		 *
+		 * @param {Array} transactions
+		 * 
+		 * @return {Array} Transformed transactions
+		 */
+		transformResults( transactions )
+		{
+			if ( !Array.isArray( transactions ) || ( transactions.length === 0 ) ) {
+				return [ ];
+			}
+			
+			const transformedEnts = transactions.map( ( t ) => this.transformEntity( t ) );
+			
+			return transformedEnts;
+		},
+		
+		/**
+		 * Transform entity
+		 * 
+		 * @methods
+		 *
+		 * @param {Object} transaction
+		 * 
+		 * @return {Object} Transformed transaction
+		 */
+		transformEntity( transaction )
+		{
+			if ( !transaction ) {
+				return null;
+			}
+			
+			if ( transaction.type === "send" ) {
+				delete transaction.involved;
+			}
+			
+			return transaction;
 		}
 	}
 };
