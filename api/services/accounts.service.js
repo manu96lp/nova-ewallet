@@ -286,7 +286,8 @@ module.exports = {
 			rest: "GET /transactions",
 			visibility: "published",
 			cache: {
-				keys: [ "#userID", "limit", "offset" ]
+				keys: [ "#userID", "limit", "offset" ],
+				ttl: 300
 			},
 			params: {
 				limit: { type: "number", min: 5, max: 50, optional: true, convert: true },
@@ -316,7 +317,6 @@ module.exports = {
 		 *
 		 * @actions
 		 * 
-		 * @param {String} type - Type [ incoming, outgoing, any ]
 		 * @param {String} frequence - Frequence [ day, week, month ]
 		 * @param {Number?} limit - Period limit
 		 *
@@ -327,10 +327,10 @@ module.exports = {
 			rest: "GET /statistics",
 			visibility: "published",
 			cache: {
-				keys: [ "#userID", "type", "frequence", "limit" ]
+				keys: [ "#userID", "frequence", "limit" ],
+				ttl: 300
 			},
 			params: {
-				type: { type: "enum", values: [ "incoming", "outgoing", "any" ] },
 				frequence: { type: "enum", values: [ "day", "week", "month" ] },
 				limit: { type: "number", min: 1, max: 60, optional: true, convert: true }
 			},
@@ -346,7 +346,6 @@ module.exports = {
 				const defaultLimits = { day: 30, week: 12, month: 6 };
 				const frequenceDays = { day: 1, week: 7, month: 30 };
 				
-				const type = ctx.params.type;
 				const frequence = ctx.params.frequence;
 				const limit = ctx.params.limit ? Math.min( ctx.params.limit, ( defaultLimits[ frequence ] * 2 ) ) : defaultLimits[ frequence ];
 				
@@ -363,6 +362,8 @@ module.exports = {
 				for ( let i = 0 ; i < limit ; i++ )
 				{
 					stats[ i ] = {
+						date: new Date( startDate.getTime( ) + ( ( frequenceDays[ frequence ] * i ) * 86400000 ) ),
+						
 						incoming: { amount: 0.0, count: 0 },
 						outgoing: { amount: 0.0, count: 0 }
 					};
@@ -371,14 +372,9 @@ module.exports = {
 				let pos;
 				let days;
 				let prop;
-				let status = ( type !== "incoming" ) ? ( type !== "any" ) ? -1 : 0 : 1;
 				
-				for ( let i = 0 ; i < list.rows.length ; i++ )
+				for ( let i = 0 ; i < list.count ; i++ )
 				{
-					if ( status && ( ( status < 0 ) !== ( list.rows[ i ].amount < 0.0 ) ) ) {
-						continue;
-					}
-					
 					days = ( ( list.rows[ i ].createdAt.getTime( ) - startDate.getTime( ) ) / 86400000 ) | 0;
 					pos = Math.min( ( days / frequenceDays[ frequence ] ) | 0, ( limit - 1 ) );
 					
@@ -462,15 +458,7 @@ module.exports = {
 				
 				await this.adapter.updateById( account._id.toString( ), { "$set": update } );
 			}
-		},
-		
-		
-		/**
-		 * Change non-redefined moleculer-db actions visibility to "public" in order to protect them from unauthorized access
-		 */
-		update: { visibility: "public" },
-		list: { visibility: "public" },
-		remove: { visibility: "public" }
+		}
 	},
 	
 	methods: {

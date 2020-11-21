@@ -99,7 +99,8 @@ module.exports = {
 		list: {
 			visibility: "public",
 			cache: {
-				keys: [ "account", "limit", "offset" ]
+				keys: [ "account", "limit", "offset" ],
+				ttl: 300
 			},
 			params: {
 				account: { type: "string" },
@@ -153,7 +154,8 @@ module.exports = {
 		period: {
 			visibility: "public",
 			cache: {
-				keys: [ "account", "startDate", "endDate" ]
+				keys: [ "account", "startDate", "endDate" ],
+				ttl: 300
 			},
 			params: {
 				account: { type: "string" },
@@ -246,19 +248,19 @@ module.exports = {
 		 * 
 		 * @methods
 		 *
-		 * @param {Array} transactions
+		 * @param {Array} results
 		 * 
-		 * @return {Array} Transformed transactions
+		 * @return {Array} Transformed results
 		 */
-		transformResults( transactions )
+		transformResults( results )
 		{
-			if ( !Array.isArray( transactions ) || ( transactions.length === 0 ) ) {
+			if ( !Array.isArray( results ) || ( results.length === 0 ) ) {
 				return [ ];
 			}
 			
-			const transformedEnts = transactions.map( ( t ) => this.transformEntity( t ) );
+			const entities = results.map( ( r ) => this.transformEntity( r ) );
 			
-			return transformedEnts;
+			return entities;
 		},
 		
 		/**

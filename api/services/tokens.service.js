@@ -45,7 +45,6 @@ module.exports = {
 		 * @returns {Object} Created token's code
 		 */
 		create: {
-			visibility: "public",
 			params: {
 				user: { type: "string" },
 				token: { type: "string" },
@@ -62,7 +61,7 @@ module.exports = {
 				
 				const item = await this.findByParams( { user } );
 				
-				if ( item && ( item.length > 0 ) ) {
+				if ( item ) {
 					throw new MoleculerClientError( "User already requested a token recently" );
 				}
 				
@@ -85,7 +84,6 @@ module.exports = {
 		 * @returns {Object} Found token
 		 */
 		find: {
-			visibility: "public",
 			params: {
 				token: { type: "string", min: 6, max: 64, optional: true },
 				type: { type: "enum", values: [ "confirmation", "protection", "recovery" ], optional: true },
@@ -98,11 +96,11 @@ module.exports = {
 				
 				const item = await this.findByParams( { token, type, user } );
 				
-				if ( !item || !item.length ) {
+				if ( !item ) {
 					return null;
 				}
 				
-				const json = await this.transformDocuments( ctx, { }, item[ 0 ] );
+				const json = await this.transformDocuments( ctx, { }, item );
 				
 				return json;
 			}
@@ -118,14 +116,13 @@ module.exports = {
 		 * @returns {Object} Updated token
 		 */
 		update: {
-			visibility: "public",
 			params: {
 				id: { type: "string" }
 			},
 			
 			async handler( ctx )
 			{
-				const token = await this.adapter.findById( ctx.params.id );
+				const token = await this.getById( ctx.params.id );
 				
 				if ( !token ) {
 					throw new MoleculerClientError( "Token not found" );
@@ -159,21 +156,31 @@ module.exports = {
 		 * 
 		 * @return {Object} Token
 		 */
-		findByParams( { token, type, user } ) {
+		async findByParams( { token, type, user } ) {
 			if ( !token && !type && !user ) {
 				return null;
 			}
 			
-			const queryParams = [
-				{ used: false },
-				{ expiration: { "$gt": new Date( ) } }
-			];
+			const params = {
+				query: {
+					"$and": [
+						{ used: false },
+						{ expiration: { "$gt": new Date( ) } }
+					]
+				}
+			};
 			
-			token && queryParams.push( { token } );
-			type && queryParams.push( { type } );
-			user && queryParams.push( { user } );
+			token && params.query[ "$and" ].push( { token } );
+			type && params.query[ "$and" ].push( { type } );
+			user && params.query[ "$and" ].push( { user } );
 			
-			return this.adapter.find( { query: { "$and": queryParams } } );
+			const results = await this.adapter.find( params );
+			
+			if ( !results || ( results === 0 ) ) {
+				return null;
+			}
+			
+			return results[ 0 ];
 		}
 	}
 };
