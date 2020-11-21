@@ -62,6 +62,18 @@ module.exports = {
 	
 	actions: {
 		/**
+		 * Change moleculer-db actions visibility to "public" in order to protect them from unauthorized access
+		 */
+		get: { visibility: "public" },
+		find: { visibility: "public" },
+		count: { visibility: "public" },
+		list: { visibility: "public" },
+		create: { visibility: "public" },
+		insert: { visibility: "public" },
+		update: { visibility: "public" },
+		remove: { visibility: "public" },
+		
+		/**
 		 * Register a new user
 		 *
 		 * @actions
@@ -609,6 +621,48 @@ module.exports = {
 		},
 		
 		/**
+		 * Get user by email
+		 *
+		 * @actions
+		 * 
+		 * @param {String} email - Email
+		 * @param {Array?} fields - Array of allowed fields
+		 *
+		 * @returns {Object} Found user
+		 */
+		findByEmail: {
+			visibility: "public",
+			cache: {
+				keys: [ "#userID", "email" ],
+			},
+			params: {
+				email: { type: "email" },
+				fields: { type: "array", optional: true }
+			},
+			
+			async handler( ctx )
+			{
+				const { email, fields } = ctx.params;
+				
+				const result = await this.adapter.findOne( { email } );
+				
+				if ( !result ) {
+					return null;
+				}
+				
+				if ( fields && ( fields.length > 0 ) ) {
+					Object.keys( result ).forEach( ( key ) => {
+						if ( !fields.includes( key ) ) {
+							delete result[ key ];
+						}
+					} );
+				}
+				
+				return result;
+			}
+		},
+		
+		/**
 		 * Get user by JWT token
 		 *
 		 * @actions
@@ -645,14 +699,7 @@ module.exports = {
 				
 				return null;
 			}
-		},
-		
-		/**
-		 * Change non-redefined moleculer-db actions visibility to "public" in order to protect them from unauthorized access
-		 */
-		get: { visibility: "public" },
-		list: { visibility: "public" },
-		remove: { visibility: "public" }
+		}
 	},
 	
 	methods: {
