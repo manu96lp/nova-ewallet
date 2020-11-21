@@ -39,7 +39,6 @@ module.exports = {
 			birthday: { type: "date", convert: true, optional: true },
 			phone: { type: "string", min: 8, max: 20, optional: true },
 			avatar: { type: "url", optional: true },
-			pin: { type: "string", length: 4, optional: true },
 			address: { type: "object", optional: true, props: {
 				province: { type: "string" },
 				department: { type: "string" },
@@ -48,13 +47,12 @@ module.exports = {
 				number: { type: "number", positive: true, convert: true }
 			} },
 			
+			logins: { type: "array", default: [ ] },
+			pin: { type: "string", length: 4, numeric: true, optional: true },
+			
 			status: { type: "enum", values: [ "pending", "confirmed", "protected", "authorized" ], default: "pending" },
 			role: { type: "enum", values: [ "user", "admin" ], default: "user" },
 			
-			lastLogin: { type: "date", optional: true },
-			lastDevice: { type: "string", optional: true },
-			lastLocation: { type: "string", optional: true },
-
 			createdAt: { type: "date", default: ( ) => new Date( ) },
 			updatedAt: { type: "date", default: ( ) => new Date( ) }
 		}
@@ -105,11 +103,13 @@ module.exports = {
 				}
 				
 				entity.password = this.generateHash( password );
+				entity.avatar = this.generateAvatar( email );
 				
 				const randomKey = generateRandomKey( 6, "numeric" );
+				
+				await ctx.call( "tokens.create", { user: result._id.toString( ), token: randomKey, type: "confirmation" } );
 
 				const result = await this.adapter.insert( entity );
-				const token = await ctx.call( "tokens.create", { user: result._id.toString( ), token: randomKey, type: "confirmation" } );
 				
 				const json = await this.transformDocuments( ctx, { }, result );
 				const tent = await this.transformEntity( json, true, ctx.meta.token );
@@ -466,9 +466,9 @@ module.exports = {
 					}
 				};
 				
-				phone && ( data.$set.phone = phone );
-				avatar && ( data.$set.avatar = avatar );
-				address && ( data.$set.address = address );
+				phone && ( data[ "$set" ].phone = phone );
+				avatar && ( data[ "$set" ].avatar = avatar );
+				address && ( data[ "$set" ].address = address );
 				
 				const result = await this.adapter.updateById( ctx.meta.user._id.toString( ), data );
 
@@ -497,19 +497,18 @@ module.exports = {
 			rest: "GET /contacts",
 			visibility: "published",
 			params: {
-				limit: { type: "number", min: 5, max: 50, default: 15, optional: true, convert: true },
-				offset: { type: "number", min: 0, default: 0, optional: true, convert: true },
+				limit: { type: "number", min: 5, max: 50, optional: true, convert: true },
+				offset: { type: "number", min: 0, optional: true, convert: true },
 			},
 			
 			async handler( ctx )
 			{
-				const list = await ctx.call( "contacts.list", { user: ctx.meta.user._id.toString( ), limit, offset } );
-				const profiles = list.rows.map( ( v ) => this.transformProfile( v ) );
+				const limit = ctx.params.limit || 15;
+				const offset = ctx.params.offset || 0;
 				
-				return {
-					rows: profiles,
-					count: list.count
-				};
+				const list = await ctx.call( "contacts.list", { user: ctx.meta.user._id.toString( ), limit, offset } );
+				
+				return list;
 			}
 		},
 
@@ -526,7 +525,7 @@ module.exports = {
 		 */
 		createContact: {
 			auth: { required: true, status: [ "authorized" ] },
-			rest: "POST /contacts",
+			rest: "POST /contacts/:email",
 			visibility: "published",
 			params: {
 				email: { type: "email" },
@@ -535,18 +534,15 @@ module.exports = {
 			
 			async handler( ctx )
 			{
-				const { email, alias } = ctx.params;
-				
-				const user = await this.adapter.findOne( { email } );
+				const user = await this.adapter.findOne( { email: ctx.params.email } );
 				
 				if ( !user ) {
 					throw new MoleculerClientError( "User not found", 404 );
 				}
 				
-				const result = await ctx.call( "contacts.create", { user: ctx.meta.user._id.toString( ), contact: user._id.toString( ), alias } );
-				const profile = this.transformProfile( result );
+				const result = await ctx.call( "contacts.create", { user: ctx.meta.user._id.toString( ), contact: user._id.toString( ), alias: ctx.params.alias } );
 				
-				return profile;
+				return result;
 			}
 		},
 
@@ -563,27 +559,24 @@ module.exports = {
 		 */
 		updateContact: {
 			auth: { required: true, status: [ "authorized" ] },
-			rest: "PUT /contacts",
+			rest: "PUT /contacts/:email",
 			visibility: "published",
 			params: {
-				contact: { type: "string" },
+				email: { type: "email" },
 				alias: { type: "string" }
 			},
 			
 			async handler( ctx )
 			{
-				const { contact, alias } = ctx.params;
-				
-				const user = await this.adapter.findById( contact );
+				const user = await this.adapter.findOne( { email: ctx.params.email } );
 				
 				if ( !user ) {
 					throw new MoleculerClientError( "User not found", 404 );
 				}
 				
-				const result = await ctx.call( "contacts.update", { user: ctx.meta.user._id.toString( ), contact: user._id.toString( ), alias } );
-				const profile = this.transformProfile( result );
+				const result = await ctx.call( "contacts.update", { user: ctx.meta.user._id.toString( ), contact: user._id.toString( ), alias: ctx.params.alias } );
 				
-				return profile;
+				return result;
 			}
 		},
 
@@ -599,24 +592,23 @@ module.exports = {
 		 */
 		removeContact: {
 			auth: { required: true, status: [ "authorized" ] },
-			rest: "DELETE /contacts",
+			rest: "DELETE /contacts/:email",
 			visibility: "published",
 			params: {
-				contact: { type: "string" }
+				email: { type: "email" }
 			},
 			
 			async handler( ctx )
 			{
-				const user = await this.adapter.findById( ctx.params.contact );
+				const user = await this.adapter.findOne( { email: ctx.params.email } );
 				
 				if ( !user ) {
 					throw new MoleculerClientError( "User not found", 404 );
 				}
 				
-				const result = await ctx.call( "contacts.remove", { user: ctx.meta.user._id.toString( ), contact: user._id.toString( ) } );
-				const profile = this.transformProfile( result );
+				const result = await ctx.call( "contacts.delete", { user: ctx.meta.user._id.toString( ), contact: user._id.toString( ) } );
 				
-				return profile;
+				return result;
 			}
 		},
 		
@@ -694,7 +686,7 @@ module.exports = {
 				} );
 
 				if ( decoded.id ) {
-					return this.getById( decoded.id );
+					return await this.getById( decoded.id );
 				}
 				
 				return null;
@@ -731,13 +723,30 @@ module.exports = {
 		 */
 		generateJWT( user )
 		{
-			const expire = new Date( Date.now( ) + 2592000000 );
+			const timestamp = ( ( Date.now( ) / 1000 ) | 0 ) + 604800;
 
 			return jwt.sign( {
 				id: user._id,
-				email: user.email,
-				expire
+				exp: timestamp
 			}, this.settings.JWT_SECRET );
+		},
+		
+		
+		/**
+		 * Generate a "random" avatar URL based on a key
+		 *
+		 * @methods
+		 *
+		 * @param {Object} key
+		 *
+		 * @return {String} Avatar URL
+		 */
+		generateAvatar( key )
+		{
+			const hash = crypto.createHash( "md5" ).update( key ).digest( "hex" );
+			const url = `https://avatars.dicebear.com/api/avataaars/${ hash }.svg?width=120&height=120`;
+			
+			return url;
 		},
 
 		/**
@@ -754,12 +763,7 @@ module.exports = {
 		transformEntity( user, withToken, token )
 		{
 			if ( user ) {
-				if ( !user.avatar ) {
-					const hash = crypto.createHash( "md5" ).update( user.email ).digest( "hex" );
-					const url = `https://avatars.dicebear.com/api/avataaars/${ hash }.svg?width=120&height=120`;
-					
-					user.avatar = url;
-				}
+				user.avatar = user.avatar || this.generateAvatar( user.email );
 				
 				if ( withToken ) {
 					user.token = token || this.generateJWT( user );
@@ -767,26 +771,6 @@ module.exports = {
 			}
 
 			return { user };
-		},
-
-		/**
-		 * Transform contact & user entities as profile.
-		 *
-		 * @methods
-		 * 
-		 * @param {Object} user
-		 * @param {Object} contact
-		 * 
-		 * @return {Object} Transformed profile
-		 */
-		transformProfile( { contact, avatar } )
-		{
-			const profile = {
-				...contact,
-				avatar
-			};
-
-			return { profile };
 		}
 	}
 };

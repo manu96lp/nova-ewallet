@@ -23,7 +23,7 @@ module.exports = {
 			"contact": {
 				action: "users.get",
 				params: {
-					fields: [ "_id", "email", "avatar" ]
+					fields: [ "email", "avatar" ]
 				}
 			}
 		},
@@ -73,11 +73,13 @@ module.exports = {
 				}
 				
 				const result = await this.adapter.insert( entity );
+				
 				const json = await this.transformDocuments( ctx, { populate: [ "contact" ] }, result );
+				const tent = this.transformEntity( json );
 				
-				await this.entityChanged( "created", json, ctx );
+				await this.entityChanged( "created", tent, ctx );
 				
-				return json;
+				return tent;
 			}
 		},
 		
@@ -128,9 +130,10 @@ module.exports = {
 				] );
 				
 				const jsons = await this.transformDocuments( ctx, params, res[ 0 ] );
+				const tents = await this.transformResults( jsons );
 				
 				return {
-					rows: jsons,
+					rows: tents,
 					count: res[ 1 ]
 				};
 			}
@@ -176,11 +179,13 @@ module.exports = {
 				};
 				
 				const result = await this.adapter.updateById( item._id, data );
+				
 				const json = await this.transformDocuments( ctx, { populate: [ "contact" ] }, result );
+				const tent = await this.transformEntity( json );
 				
-				await this.entityChanged( "updated", json, ctx );
+				await this.entityChanged( "updated", tent, ctx );
 				
-				return json;
+				return tent;
 			}
 		},
 
@@ -194,8 +199,7 @@ module.exports = {
 		 * 
 		 * @returns {Object} Deleted contact
 		 */
-		remove: {
-			visibility: "public",
+		delete: {
 			params: {
 				user: { type: "string" },
 				contact: { type: "string" }
@@ -212,11 +216,13 @@ module.exports = {
 				}
 				
 				const result = await this.adapter.removeById( item._id );
-				const json = await this.transformDocuments( ctx, { populate: [ "contact" ] }, result );
 				
-				await this.entityChanged( "removed", json, ctx );
+				const json = await this.transformDocuments( ctx, { populate: [ "contact" ] }, result );
+				const tent = await this.transformEntity( json );
+				
+				await this.entityChanged( "removed", tent, ctx );
 
-				return json;
+				return tent;
 			}
 		}
 	},
@@ -232,17 +238,70 @@ module.exports = {
 		 * 
 		 * @return {Object} Contact
 		 */
-		findByContactAndUser( userId, contactId ) {
+		async findByContactAndUser( userId, contactId ) {
+			if ( !userId || !contactId ) {
+				return null;
+			}
+			
 			const params = {
 				query: {
 					"$and": [
-						{ userId },
-						{ contactId }
+						{ user: userId },
+						{ contact: contactId }
 					]
 				}
 			};
 			
-			return this.adapter.findOne( params );
+			const results = await this.adapter.find( params );
+			
+			if ( !results || ( results === 0 ) ) {
+				return null;
+			}
+			
+			return results[ 0 ];
+		},
+		
+		/**
+		 * Transform results
+		 *
+		 * @methods
+		 *
+		 * @param {Array} results
+		 * 
+		 * @return {Object} Transformed results
+		 */
+		transformResults( results )
+		{
+			if ( !Array.isArray( results ) || ( results.length === 0 ) ) { 
+				return [ ];
+			}
+			
+			const entities = results.map( ( r ) => this.transformEntity( r ) );
+			
+			return entities;
+		},
+		
+		/**
+		 * Transform contact
+		 *
+		 * @methods
+		 *
+		 * @param {Object} contact
+		 * 
+		 * @return {Object} Transformed contact
+		 */
+		transformEntity( { contact, alias } )
+		{
+			if ( !contact || !alias ) { 
+				return null;
+			}
+			
+			const entity = {
+				...contact,
+				alias
+			};
+			
+			return entity;
 		}
 	}
 };
