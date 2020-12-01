@@ -43,9 +43,9 @@ POST    /api/users/forgot
 POST    /api/users/reset/:token
 GET     /api/users/me
 GET     /api/users/contacts
-POST    /api/users/contacts
-PUT     /api/users/contacts
-DELETE  /api/users/contacts
+POST    /api/users/contacts/:email
+PUT     /api/users/contacts/:email
+DELETE  /api/users/contacts/:email
 ```
 ```
 GET     /api/accounts/current

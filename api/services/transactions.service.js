@@ -52,7 +52,6 @@ module.exports = {
 		 * @returns {Object} Created transaction
 		 */
 		create: {
-			visibility: "public",
 			params: {
 				account: { type: "string" },
 				involved: { type: "string" },
@@ -97,7 +96,6 @@ module.exports = {
 		 * @returns {Object} List of transactions
 		 */
 		list: {
-			visibility: "public",
 			cache: {
 				keys: [ "account", "limit", "offset" ],
 				ttl: 300
@@ -152,7 +150,6 @@ module.exports = {
 		 * @returns {Object} List of transactions
 		 */
 		period: {
-			visibility: "public",
 			cache: {
 				keys: [ "account", "startDate", "endDate" ],
 				ttl: 300
