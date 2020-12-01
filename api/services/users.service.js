@@ -30,7 +30,7 @@ module.exports = {
 		fields: [ "_id", "email", "name", "surname", "birthday", "phone", "avatar", "pin", "address", "status" ],
 		
 		entityValidator: {
-			email: { type: "email", max: 48, optional: true },
+			email: { type: "email", lowercase: true, max: 48, optional: true },
 			password: { type: "string", min: 8, max: 20, optional: true },
 			identityNumber: { type: "string", alphanum: true, min: 7, max: 20, optional: true },
 			identityType: { type: "enum", values: [ "nid", "passport" ], optional: true },
@@ -47,11 +47,12 @@ module.exports = {
 				number: { type: "number", positive: true, convert: true }
 			} },
 			
-			logins: { type: "array", default: [ ] },
-			pin: { type: "string", length: 4, numeric: true, optional: true },
-			
+			notifications: { type: "enum", values: [ "all", "important", "none" ], default: "all" },
 			status: { type: "enum", values: [ "pending", "confirmed", "protected", "authorized" ], default: "pending" },
 			role: { type: "enum", values: [ "user", "admin" ], default: "user" },
+			
+			logins: { type: "array", default: [ ] },
+			pin: { type: "string", length: 4, numeric: true, optional: true },
 			
 			createdAt: { type: "date", default: ( ) => new Date( ) },
 			updatedAt: { type: "date", default: ( ) => new Date( ) }
@@ -147,7 +148,8 @@ module.exports = {
 			
 			async handler( ctx )
 			{
-				const { email, password } = ctx.params;
+				const email = ctx.params.email.toLowerCase( );
+				const password = ctx.params.password;
 
 				const user = await this.adapter.findOne( { email } );
 				
@@ -254,167 +256,6 @@ module.exports = {
 		},
 
 		/**
-		 * Verify token
-		 * Auth is required
-		 *
-		 * @actions
-		 * 
-		 * @param {String} token
-		 */
-		verifyToken: {
-			auth: { required: true },
-			rest: "POST /verify/:token",
-			visibility: "published",
-			params: {
-				token: { type: "string", min: 6, max: 64 }
-			},
-			
-			async handler( ctx )
-			{
-				const sanitizedToken = ctx.params.token.replace( /\s/g, '' );
-				const found = await ctx.call( "tokens.find", { token: sanitizedToken, user: ctx.meta.user._id.toString( ) } );
-				
-				if ( !found ) {
-					throw new MoleculerClientError( "Token not found", 404 );
-				}
-				
-				const nextStatus = {
-					confirmation: "confirmed",
-					protection: "authorized"
-				};
-				
-				if ( !nextStatus[ found.type ] ) {
-					throw new MoleculerClientError( "Invalid token", 409 );
-				}
-				
-				await ctx.call( "tokens.update", { id: found._id.toString( ) } );
-				
-				const result = await this.adapter.updateById( found.user, { "$set": { status: nextStatus[ found.type ] } } );
-
-				const json = await this.transformDocuments( ctx, { }, result );
-				const tent = this.transformEntity( json, false );
-				
-				await this.entityChanged( "updated", tent, ctx );
-			}
-		},
-
-		/**
-		 * Forgot password (request recovery token)
-		 *
-		 * @actions
-		 * 
-		 * @param {String} email
-		 */
-		forgot: {
-			rest: "POST /forgot",
-			visibility: "published",
-			params: {
-				email: { type: "email" }
-			},
-			
-			async handler( ctx )
-			{
-				const { email } = ctx.params;
-				
-				const user = await this.adapter.findOne( { email } );
-				
-				if ( !user ) {
-					throw new MoleculerClientError( "Email not found", 422, "", [ { field: "email", message: "not found" } ] );
-				}
-				
-				const token = await ctx.call( "tokens.find", { user: user._id.toString( ), type: "recovery" } );
-				 
-				if ( token ) {
-					throw new MoleculerClientError( "User already requested a token recently", 409 );
-				}
-				
-				const randomKey = generateRandomKey( 64, "alphanumeric" );
-				
-				await ctx.call( "tokens.create", { user: user._id.toString( ), token: randomKey, type: "recovery" } );
-				
-				sendMail( {
-					to: email,
-					subject: "[Henry Bank] Restablecimiento de clave",
-					template: "recovery",
-					input: {
-						name: user.name,
-						surname: user.surname,
-						code: randomKey
-					}
-				} );
-			}
-		},
-
-		/**
-		 * Reset password with recovery token
-		 *
-		 * @actions
-		 * 
-		 * @param {String} token
-		 * @param {String} password
-		 */
-		reset: {
-			rest: "POST /reset/:token",
-			visibility: "published",
-			params: {
-				token: { type: "string", length: 64 },
-				password: { type: "string", min: 8, max: 20 }
-			},
-			
-			async handler( ctx )
-			{
-				const { token, password } = ctx.params;
-				const found = await ctx.call( "tokens.find", { token, type: "recovery" } );
-				
-				if ( !found ) {
-					throw new MoleculerClientError( "Token not found", 404 );
-				}
-				
-				await ctx.call( "tokens.update", { id: found._id } );
-				
-				const hashedPassword = this.generateHash( password );
-				
-				const result = await this.adapter.updateById( found.user, { "$set": { password: hashedPassword } } );
-
-				const json = await this.transformDocuments( ctx, { }, result );
-				const tent = this.transformEntity( json, false );
-				
-				await this.entityChanged( "updated", tent, ctx );
-			}
-		},
-		
-		/**
-		 * Get current user entity.
-		 * Auth is required
-		 *
-		 * @actions
-		 *
-		 * @returns {Object} User entity
-		 */
-		me: {
-			auth: { required: true },
-			rest: "GET /me",
-			visibility: "published",
-			cache: {
-				keys: [ "#userID" ]
-			},
-			
-			async handler( ctx )
-			{
-				const user = await this.getById( ctx.meta.user._id.toString( ) );
-				
-				if ( !user ) {
-					throw new MoleculerClientError( "User not found", 404 );
-				}
-
-				const json = await this.transformDocuments( ctx, { }, user );
-				const tent = this.transformEntity( json, true, ctx.meta.token );
-				
-				return tent;
-			}
-		},
-
-		/**
 		 * Update current user
 		 * Auth is required
 		 *
@@ -480,6 +321,169 @@ module.exports = {
 				return tent;
 			}
 		},
+
+		/**
+		 * Verify token
+		 * Auth is required
+		 *
+		 * @actions
+		 * 
+		 * @param {String} token
+		 */
+		verifyToken: {
+			auth: { required: true },
+			rest: "POST /verify/:token",
+			visibility: "published",
+			params: {
+				token: { type: "string", min: 6, max: 64 }
+			},
+			
+			async handler( ctx )
+			{
+				const sanitizedToken = ctx.params.token.replace( /\s/g, '' );
+				
+				const found = await ctx.call( "tokens.find", { token: sanitizedToken, user: ctx.meta.user._id.toString( ) } );
+				
+				if ( !found ) {
+					throw new MoleculerClientError( "Token not found", 404 );
+				}
+				
+				const nextStatus = {
+					confirmation: "confirmed",
+					protection: "authorized"
+				};
+				
+				if ( !nextStatus[ found.type ] ) {
+					throw new MoleculerClientError( "Invalid token", 409 );
+				}
+				
+				await ctx.call( "tokens.update", { id: found._id.toString( ) } );
+				
+				const result = await this.adapter.updateById( found.user, { "$set": { status: nextStatus[ found.type ] } } );
+
+				const json = await this.transformDocuments( ctx, { }, result );
+				const tent = this.transformEntity( json, false );
+				
+				await this.entityChanged( "updated", tent, ctx );
+			}
+		},
+		
+		/**
+		 * Get current user entity.
+		 * Auth is required
+		 *
+		 * @actions
+		 *
+		 * @returns {Object} User entity
+		 */
+		me: {
+			auth: { required: true },
+			rest: "GET /me",
+			visibility: "published",
+			cache: {
+				keys: [ "#userID" ]
+			},
+			
+			async handler( ctx )
+			{
+				const user = await this.getById( ctx.meta.user._id.toString( ) );
+				
+				if ( !user ) {
+					throw new MoleculerClientError( "User not found", 404 );
+				}
+
+				const json = await this.transformDocuments( ctx, { }, user );
+				const tent = this.transformEntity( json, true, ctx.meta.token );
+				
+				return tent;
+			}
+		},
+
+		/**
+		 * Forgot password (request recovery token)
+		 *
+		 * @actions
+		 * 
+		 * @param {String} email
+		 */
+		forgot: {
+			rest: "POST /forgot",
+			visibility: "published",
+			params: {
+				email: { type: "email" }
+			},
+			
+			async handler( ctx )
+			{
+				const email = ctx.params.email.toLowerCase( );
+				
+				const user = await this.adapter.findOne( { email } );
+				
+				if ( !user ) {
+					throw new MoleculerClientError( "Email not found", 422, "", [ { field: "email", message: "not found" } ] );
+				}
+				
+				const token = await ctx.call( "tokens.find", { user: user._id.toString( ), type: "recovery" } );
+				 
+				if ( token ) {
+					throw new MoleculerClientError( "User already requested a token recently", 409 );
+				}
+				
+				const randomKey = generateRandomKey( 64, "alphanumeric" );
+				
+				await ctx.call( "tokens.create", { user: user._id.toString( ), token: randomKey, type: "recovery" } );
+				
+				sendMail( {
+					to: email,
+					subject: "[Henry Bank] Restablecimiento de clave",
+					template: "recovery",
+					input: {
+						name: user.name,
+						surname: user.surname,
+						code: randomKey
+					}
+				} );
+			}
+		},
+
+		/**
+		 * Reset password with recovery token
+		 *
+		 * @actions
+		 * 
+		 * @param {String} token
+		 * @param {String} password
+		 */
+		reset: {
+			rest: "POST /reset/:token",
+			visibility: "published",
+			params: {
+				token: { type: "string", length: 64 },
+				password: { type: "string", min: 8, max: 20 }
+			},
+			
+			async handler( ctx )
+			{
+				const { token, password } = ctx.params;
+				
+				const found = await ctx.call( "tokens.find", { token, type: "recovery" } );
+				
+				if ( !found ) {
+					throw new MoleculerClientError( "Token not found", 404 );
+				}
+				
+				await ctx.call( "tokens.update", { id: found._id } );
+				
+				const hashedPassword = this.generateHash( password );
+				
+				const result = await this.adapter.updateById( found.user, { "$set": { password: hashedPassword } } );
+
+				const json = await this.transformDocuments( ctx, { }, result );
+				const tent = this.transformEntity( json, false );
+				
+				await this.entityChanged( "updated", tent, ctx );
+			}
+		},
 		
 		/**
 		 * Get contacts list
@@ -534,7 +538,9 @@ module.exports = {
 			
 			async handler( ctx )
 			{
-				const user = await this.adapter.findOne( { email: ctx.params.email } );
+				const email = ctx.params.email.toLowerCase( );
+				
+				const user = await this.adapter.findOne( { email } );
 				
 				if ( !user ) {
 					throw new MoleculerClientError( "User not found", 404 );
@@ -568,7 +574,9 @@ module.exports = {
 			
 			async handler( ctx )
 			{
-				const user = await this.adapter.findOne( { email: ctx.params.email } );
+				const email = ctx.params.email.toLowerCase( );
+				
+				const user = await this.adapter.findOne( { email } );
 				
 				if ( !user ) {
 					throw new MoleculerClientError( "User not found", 404 );
@@ -600,7 +608,9 @@ module.exports = {
 			
 			async handler( ctx )
 			{
-				const user = await this.adapter.findOne( { email: ctx.params.email } );
+				const email = ctx.params.email.toLowerCase( );
+				
+				const user = await this.adapter.findOne( { email } );
 				
 				if ( !user ) {
 					throw new MoleculerClientError( "User not found", 404 );
@@ -634,7 +644,8 @@ module.exports = {
 			
 			async handler( ctx )
 			{
-				const { email, fields } = ctx.params;
+				const email = ctx.params.email.toLowerCase( );
+				const fields = ctx.params.fields || null;
 				
 				const result = await this.adapter.findOne( { email } );
 				

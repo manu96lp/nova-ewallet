@@ -53,8 +53,9 @@ function calculateAge( birthday )
 	
 	const year = current.getYear( ) - birthday.getYear( );
 	const month = current.getMonth( ) - birthday.getMonth( );
+	const date = current.getDate( ) - birthday.getDate( );
 	
-	return ( month >= 0 ) ? ( year - 1 ) : year;
+	return ( ( month > 0 ) || ( ( month === 0 ) && ( date > 0 ) ) ) ? ( year - 1 ) : year;
 }
 
 /**

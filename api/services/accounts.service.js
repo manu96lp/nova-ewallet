@@ -121,9 +121,9 @@ module.exports = {
 			rest: "POST /recharge",
 			visibility: "published",
 			params: {
-				code: { type: "string" },
-				store: { type: "string" },
-				amount: { type: "number", convert: true },
+				code: { type: "string", min: 1 },
+				store: { type: "string", min: 1 },
+				amount: { type: "number", positive: true, convert: true },
 				date: { type: "date", convert: true },
 				
 				address: { type: "object", props: {
@@ -197,7 +197,8 @@ module.exports = {
 			
 			async handler( ctx )
 			{
-				const { email, amount } = ctx.params;
+				const email = ctx.params.email.toLowerCase( );
+				const amount = ctx.params.amount;
 				
 				const senderAccount = await this.findByOwner( ctx.meta.user._id.toString( ) );
 				

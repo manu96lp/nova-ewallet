@@ -52,7 +52,6 @@ module.exports = {
 		 * @returns {Object} Created contact
 		 */
 		create: {
-			visibility: "public",
 			params: {
 				user: { type: "string" },
 				contact: { type: "string" },
@@ -95,7 +94,6 @@ module.exports = {
 		 * @returns {Object} List of contacts
 		 */
 		list: {
-			visibility: "public",
 			cache: {
 				keys: [ "#userID", "limit", "offset" ]
 			},
@@ -151,7 +149,6 @@ module.exports = {
 		 * @returns {Object} Contact profile
 		 */
 		update: {
-			visibility: "public",
 			params: {
 				user: { type: "string" },
 				contact: { type: "string" },
