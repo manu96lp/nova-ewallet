@@ -1,9 +1,9 @@
 [![Moleculer](https://badgen.net/badge/Powered%20by/Moleculer/0e83cd)](https://moleculer.services)
 [![React Native](https://badgen.net/badge/Powered%20by/React%20Native/0e83cd)](https://reactnative.dev/)
 
-# Henry-Bank
+# Nova
 
-Henry-Bank is a very simple fintech project mobile application with microservices. Powered by Moleculer and React-Native.
+Nova is a simple mobile application made as an example of a fintech project. It's a on-development re-write of Henry Bank in order to create a functional and more efficient application that follows the theory of microservices. Powered by Molecular and React-Native
 
 ## Tech Stack
 
@@ -31,3 +31,9 @@ Once you've ensured you have installed NPM correctly, follow these steps to run 
 - Configure environment variables accordingly.
 - Run the back-end with `npm install` and then `npm run dev`.
 - Run the front-end with `npm install` and then `expo start`.
+
+## To-do
+
+```
+- Build front-end
+```
